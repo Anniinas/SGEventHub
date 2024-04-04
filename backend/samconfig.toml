@@ -17,6 +17,11 @@ lint = true
 capabilities = "CAPABILITY_IAM"
 confirm_changeset = true
 resolve_s3 = true
+s3_prefix = "sgeventhub"
+region = "eu-north-1"
+profile = "sgeventhub"
+image_repositories = []
+parameter_overrides = "DeploymentName=\"dev\""
 
 [default.package.parameters]
 resolve_s3 = true

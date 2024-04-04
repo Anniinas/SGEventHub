@@ -1,9 +1,12 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: >
-    sgeventhub
+Description: SAM template for the SGEventHub Infrastructure
 
-    Powertools for AWS Lambda (Python) example
+Parameters:
+    DeploymentName:
+      Description: Unique name used to create OAC and cache policy.
+      Type: String
+      AllowedPattern: (?!(^((2(5[0-5]|[0-4][0-9])|[01]?[0-9]{1,2})\.){3}(2(5[0-5]|[0-4][0-9])|[01]?[0-9]{1,2})$|^xn--|.+-s3alias$))^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$
 
 Globals: # https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-specification-template-anatomy-globals.html
     Function:
@@ -12,6 +15,75 @@ Globals: # https://docs.aws.amazon.com/serverless-application-model/latest/devel
         Runtime: python3.10
 
 Resources:
+
+    CloudFrontOAI:
+        Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+        Properties:
+            CloudFrontOriginAccessIdentityConfig:
+                Comment: 'access-identity-passport-front.s3.amazonaws.com'
+
+    CloudFrontCachePolicy:
+        Type: AWS::CloudFront::CachePolicy
+        DependsOn: Frontend
+        Properties:
+            CachePolicyConfig:
+                DefaultTTL: 86400
+                MaxTTL: 31536000
+                MinTTL: 1
+                Name: !Ref DeploymentName
+                ParametersInCacheKeyAndForwardedToOrigin:
+                    CookiesConfig:
+                        CookieBehavior: none
+                    EnableAcceptEncodingBrotli: true
+                    EnableAcceptEncodingGzip: true
+                    HeadersConfig:
+                        HeaderBehavior: none
+                    QueryStringsConfig:
+                        QueryStringBehavior: none
+
+    CloudFrontDistribution:
+        Type: AWS::CloudFront::Distribution
+        Properties:
+            DistributionConfig:
+                HttpVersion: http2
+                Enabled: true
+                DefaultRootObject: index.html
+                DefaultCacheBehavior: 
+                    CachePolicyId: !Ref CloudFrontCachePolicy
+                    TargetOriginId: thisS3Origin
+                    ViewerProtocolPolicy: redirect-to-https
+                Origins:
+                - 
+                    #DomainName: !GetAtt Frontend.DomainName
+                    DomainName: !Sub '${Frontend}.s3.${AWS::Region}.amazonaws.com' 
+                    #sgeventhub-frontend.s3-website-eu-north-1.amazonaws.com
+                    Id: thisS3Origin
+                    S3OriginConfig:
+                        OriginAccessIdentity: !Join ['', ['origin-access-identity/cloudfront/', !Ref CloudFrontOAI]]
+
+    Frontend:
+        Type: AWS::S3::Bucket
+        Properties:
+            BucketName: sgeventhub-frontend
+            PublicAccessBlockConfiguration:
+                BlockPublicAcls: true
+                BlockPublicPolicy: true
+                IgnorePublicAcls: true
+                RestrictPublicBuckets: true
+
+    FrontendBucketPolicy:
+        Type: AWS::S3::BucketPolicy
+        Properties:
+            Bucket: !Ref Frontend
+            PolicyDocument:
+                Statement:
+                    Action: s3:GetObject
+                    Effect: Allow
+                    Principal:
+                        CanonicalUser: !GetAtt CloudFrontOAI.S3CanonicalUserId
+                    Resource: !Sub "arn:aws:s3:::${Frontend}/*"                          
+                        
+
     HelloWorldFunction:
         Type: AWS::Serverless::Function # More info about Function Resource: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-function.html
         Properties:
