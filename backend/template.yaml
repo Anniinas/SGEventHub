@@ -3,117 +3,377 @@ Transform: AWS::Serverless-2016-10-31
 Description: SAM template for the SGEventHub Infrastructure
 
 Parameters:
-    DeploymentName:
-      Description: Unique name used to create OAC and cache policy.
-      Type: String
-      AllowedPattern: (?!(^((2(5[0-5]|[0-4][0-9])|[01]?[0-9]{1,2})\.){3}(2(5[0-5]|[0-4][0-9])|[01]?[0-9]{1,2})$|^xn--|.+-s3alias$))^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$
+  DeploymentName:
+    Description: Unique name used to create OAC and cache policy.
+    Type: String
+    AllowedPattern: (?!(^((2(5[0-5]|[0-4][0-9])|[01]?[0-9]{1,2})\.){3}(2(5[0-5]|[0-4][0-9])|[01]?[0-9]{1,2})$|^xn--|.+-s3alias$))^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$
 
 Globals: # https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-specification-template-anatomy-globals.html
-    Function:
-        Timeout: 5
-        MemorySize: 128
-        Runtime: python3.10
+  Function:
+    Timeout: 5
+    MemorySize: 128
+    Runtime: python3.10
 
 Resources:
 
-    CloudFrontOAI:
-        Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
-        Properties:
-            CloudFrontOriginAccessIdentityConfig:
-                Comment: 'access-identity-passport-front.s3.amazonaws.com'
+  CloudFrontOAI:
+      Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+      Properties:
+          CloudFrontOriginAccessIdentityConfig:
+              Comment: 'access-identity-passport-front.s3.amazonaws.com'
 
-    CloudFrontCachePolicy:
-        Type: AWS::CloudFront::CachePolicy
-        DependsOn: Frontend
-        Properties:
-            CachePolicyConfig:
-                DefaultTTL: 86400
-                MaxTTL: 31536000
-                MinTTL: 1
-                Name: !Ref DeploymentName
-                ParametersInCacheKeyAndForwardedToOrigin:
-                    CookiesConfig:
-                        CookieBehavior: none
-                    EnableAcceptEncodingBrotli: true
-                    EnableAcceptEncodingGzip: true
-                    HeadersConfig:
-                        HeaderBehavior: none
-                    QueryStringsConfig:
-                        QueryStringBehavior: none
+  CloudFrontCachePolicy:
+      Type: AWS::CloudFront::CachePolicy
+      DependsOn: Frontend
+      Properties:
+          CachePolicyConfig:
+              DefaultTTL: 86400
+              MaxTTL: 31536000
+              MinTTL: 1
+              Name: !Ref DeploymentName
+              ParametersInCacheKeyAndForwardedToOrigin:
+                  CookiesConfig:
+                      CookieBehavior: none
+                  EnableAcceptEncodingBrotli: true
+                  EnableAcceptEncodingGzip: true
+                  HeadersConfig:
+                      HeaderBehavior: none
+                  QueryStringsConfig:
+                      QueryStringBehavior: none
 
-    CloudFrontDistribution:
-        Type: AWS::CloudFront::Distribution
-        Properties:
-            DistributionConfig:
-                HttpVersion: http2
-                Enabled: true
-                DefaultRootObject: index.html
-                DefaultCacheBehavior: 
-                    CachePolicyId: !Ref CloudFrontCachePolicy
-                    TargetOriginId: thisS3Origin
-                    ViewerProtocolPolicy: redirect-to-https
-                Origins:
-                - 
-                    #DomainName: !GetAtt Frontend.DomainName
-                    DomainName: !Sub '${Frontend}.s3.${AWS::Region}.amazonaws.com' 
-                    #sgeventhub-frontend.s3-website-eu-north-1.amazonaws.com
-                    Id: thisS3Origin
-                    S3OriginConfig:
-                        OriginAccessIdentity: !Join ['', ['origin-access-identity/cloudfront/', !Ref CloudFrontOAI]]
+  CloudFrontDistribution:
+      Type: AWS::CloudFront::Distribution
+      Properties:
+          DistributionConfig:
+              HttpVersion: http2
+              Enabled: true
+              DefaultRootObject: index.html
+              DefaultCacheBehavior: 
+                  CachePolicyId: !Ref CloudFrontCachePolicy
+                  TargetOriginId: thisS3Origin
+                  ViewerProtocolPolicy: redirect-to-https
+              Origins:
+              - 
+                  DomainName: !Sub '${Frontend}.s3.${AWS::Region}.amazonaws.com' 
+                  Id: thisS3Origin
+                  S3OriginConfig:
+                    OriginAccessIdentity: !Join ['', ['origin-access-identity/cloudfront/', !Ref CloudFrontOAI]]
 
-    Frontend:
-        Type: AWS::S3::Bucket
-        Properties:
-            BucketName: sgeventhub-frontend
-            PublicAccessBlockConfiguration:
-                BlockPublicAcls: true
-                BlockPublicPolicy: true
-                IgnorePublicAcls: true
-                RestrictPublicBuckets: true
+  Frontend:
+      Type: AWS::S3::Bucket
+      Properties:
+          BucketName: sgeventhub-frontend
+          PublicAccessBlockConfiguration:
+              BlockPublicAcls: true
+              BlockPublicPolicy: true
+              IgnorePublicAcls: true
+              RestrictPublicBuckets: true
 
-    FrontendBucketPolicy:
-        Type: AWS::S3::BucketPolicy
-        Properties:
-            Bucket: !Ref Frontend
-            PolicyDocument:
-                Statement:
-                    Action: s3:GetObject
-                    Effect: Allow
-                    Principal:
-                        CanonicalUser: !GetAtt CloudFrontOAI.S3CanonicalUserId
-                    Resource: !Sub "arn:aws:s3:::${Frontend}/*"                          
-                        
+  FrontendBucketPolicy:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+          Bucket: !Ref Frontend
+          PolicyDocument:
+              Statement:
+                  Action: s3:GetObject
+                  Effect: Allow
+                  Principal:
+                      CanonicalUser: !GetAtt CloudFrontOAI.S3CanonicalUserId
+                  Resource: !Sub "arn:aws:s3:::${Frontend}/*"                          
+                      
 
-    HelloWorldFunction:
-        Type: AWS::Serverless::Function # More info about Function Resource: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-function.html
-        Properties:
-            Handler: app.lambda_handler
-            CodeUri: hello_world
-            Description: Hello World function
-            Architectures:
-                - x86_64
-            Tracing: Active
-            Events:
-                HelloPath:
-                    Type: Api # More info about API Event Source: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-property-function-api.html
-                    Properties:
-                        Path: /hello
-                        Method: GET
-             # Powertools for AWS Lambda (Python) env vars: https://awslabs.github.io/aws-lambda-powertools-python/#environment-variables
-            Environment:
-                Variables:
-                    POWERTOOLS_SERVICE_NAME: PowertoolsHelloWorld
-                    POWERTOOLS_METRICS_NAMESPACE: Powertools
-                    LOG_LEVEL: INFO
-            Tags:
-                LambdaPowertools: python
+  HelloWorldFunction:
+      Type: AWS::Serverless::Function # More info about Function Resource: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-function.html
+      Properties:
+          Handler: app.lambda_handler
+          CodeUri: hello_world
+          Description: Hello World function
+          Architectures:
+              - x86_64
+          Tracing: Active
+          Events:
+              HelloPath:
+                  Type: Api # More info about API Event Source: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-property-function-api.html
+                  Properties:
+                      Path: /hello
+                      Method: GET
+            # Powertools for AWS Lambda (Python) env vars: https://awslabs.github.io/aws-lambda-powertools-python/#environment-variables
+          Environment:
+              Variables:
+                  POWERTOOLS_SERVICE_NAME: PowertoolsHelloWorld
+                  POWERTOOLS_METRICS_NAMESPACE: Powertools
+                  LOG_LEVEL: INFO
+          Tags:
+              LambdaPowertools: python          
 
+  EventCrudApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: EventManagementAPI
+      StageName: dev
+      DefinitionBody:
+        openapi: "3.0.1"
+        info:
+          title: "DynamoDB Crud API with Canary releases"
+          version: "1.0.0"
+        paths:
+          /{id}:
+            get:
+              parameters:
+              - name: "id"
+                in: "path"
+                required: true
+                schema:
+                  type: "string"
+              responses:
+                "200":
+                  description: "200 response"
+                  content: {}
+              x-amazon-apigateway-integration:
+                type: "aws"
+                credentials:
+                  Fn::GetAtt: [EventCrudRole, Arn]
+                httpMethod: "POST"
+                uri: {"Fn::Sub":"arn:aws:apigateway:${AWS::Region}:dynamodb:action/GetItem"}
+                responses:
+                  default:
+                    statusCode: "200"
+                    responseTemplates:
+                      application/json: |
+                        #set($inputRoot = $input.path('$')) 
+                        {
+                          "id": "$inputRoot.Item.id.S",
+                          "name": "$inputRoot.Item.name.S",
+                          "date": "$inputRoot.Item.date.S",
+                          "location": "$inputRoot.Item.location.S",
+                        }
+                requestTemplates:
+                  application/json:
+                    Fn::Sub: |
+                      {
+                        "TableName": "${EventCrudDDB}",
+                        "Key": {
+                          "id": {
+                            "S": "$input.params().path.id"
+                          }
+                        }
+                      }
+                passthroughBehavior: "when_no_templates"
+            put:
+              parameters:
+              - name: "id"
+                in: "path"
+                required: true
+                schema:
+                  type: "string"
+              responses:
+                "200":
+                  description: "200 response"
+                  content: {}
+              x-amazon-apigateway-integration:
+                type: "aws"
+                credentials:
+                  Fn::GetAtt: [EventCrudRole, Arn]
+                httpMethod: "POST"
+                uri: {"Fn::Sub":"arn:aws:apigateway:${AWS::Region}:dynamodb:action/UpdateItem"}
+                responses:
+                  default:
+                    statusCode: "200"
+                    responseTemplates:
+                      application/json: |
+                        #set($inputRoot = $input.path('$'))
+                        {
+                          "id": "$inputRoot.Attributes.id.S",
+                          "message": "$inputRoot.Attributes.message.S"
+                        }
+                requestTemplates:
+                  application/json:
+                    Fn::Sub: |
+                      {
+                        "TableName": "${EventCrudDDB}",
+                        "Key": {
+                          "id": {
+                            "S": "$input.params().path.id"
+                          }
+                        },
+                        "ExpressionAttributeNames": {
+                          "#m": "message"
+                        },
+                        "ExpressionAttributeValues": {
+                          ":m": {
+                            "S": $input.json('$.message')
+                          }
+                        },
+                        "UpdateExpression": "SET #m = :m",
+                        "ReturnValues": "ALL_NEW"
+                      }
+
+                passthroughBehavior: "when_no_templates"
+            delete:
+              parameters:
+              - name: "id"
+                in: "path"
+                required: true
+                schema:
+                  type: "string"
+              responses:
+                "200":
+                  description: "200 response"
+                  content: {}
+              x-amazon-apigateway-integration:
+                type: "aws"
+                credentials:
+                  Fn::GetAtt: [EventCrudRole, Arn]
+                httpMethod: "POST"
+                uri: {"Fn::Sub":"arn:aws:apigateway:${AWS::Region}:dynamodb:action/DeleteItem"}
+                responses:
+                  default:
+                    statusCode: "200"
+                    responseTemplates:
+                      application/json: |
+                        {
+                          "message": "item deleted"
+                        }
+                requestTemplates:
+                  application/json:
+                    Fn::Sub: |
+                      {
+                        "TableName": "${EventCrudDDB}",
+                        "Key": {
+                          "id": {
+                            "S": "$input.params().path.id"
+                          }
+                        }
+                      }
+                passthroughBehavior: "when_no_templates"
+          /:
+            get:
+              responses:
+                "200":
+                  description: "200 response"
+                  headers:
+                    Cache-Control:
+                      schema:
+                        type: "string"
+                    Access-Control-Allow-Origin:
+                      schema:
+                        type: "string"
+                  content: {}
+              x-amazon-apigateway-integration:
+                type: "aws"
+                credentials:
+                  Fn::GetAtt: [EventCrudRole, Arn]
+                httpMethod: "POST"
+                uri: {"Fn::Sub":"arn:aws:apigateway:${AWS::Region}:dynamodb:action/Scan"}
+                responses:
+                  "200":
+                    statusCode: "200"
+                    responseParameters:
+                      method.response.header.Cache-Control: "'no-cache, no-store'"
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+                    responseTemplates:
+                      application/json: |
+                        #set($inputRoot = $input.path('$'))
+                        $inputRoot.Items
+                requestTemplates:
+                  application/json:
+                    Fn::Sub: |
+                      {
+                        "TableName": "${EventCrudDDB}"
+                      }
+                passthroughBehavior: "when_no_templates"
+            post:
+              responses:
+                "200":
+                  description: "200 response"
+                  content: {}
+              x-amazon-apigateway-integration:
+                type: "aws"
+                credentials:
+                  Fn::GetAtt: [EventCrudRole, Arn]
+                httpMethod: "POST"
+                uri: {"Fn::Sub":"arn:aws:apigateway:${AWS::Region}:dynamodb:action/UpdateItem"}
+                responses:
+                  default:
+                    statusCode: "200"
+                    responseTemplates:
+                      application/json: |
+                        #set($inputRoot = $input.path('$'))
+                        {
+                          "id": "$inputRoot.Attributes.id.S",
+                          "message": "$inputRoot.Attributes.message.S"
+                        }
+                requestTemplates:
+                  application/json:
+                    Fn::Sub: |
+                      {
+                        "TableName": "${EventCrudDDB}",
+                        "Key": {
+                          "id": {
+                            "S": "$context.requestId"
+                          }
+                        },
+                        "ExpressionAttributeNames": {
+                          "#m": "message"
+                        },
+                        "ExpressionAttributeValues": {
+                          ":m": {
+                            "S": $input.json('$.message')
+                          }
+                        },
+                        "UpdateExpression": "SET #m = :m",
+                        "ReturnValues": "ALL_NEW"
+                      }
+
+                passthroughBehavior: "when_no_templates"
+        components: {}
+
+  EventCrudDDB:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+
+  EventCrudRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "apigateway.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: DBCrudPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              Action:
+                - dynamodb:DeleteItem
+                - dynamodb:UpdateItem
+                - dynamodb:CreateItem
+                - dynamodb:GetItem
+                - dynamodb:Scan
+                - dynamodb:Query
+              Effect: Allow
+              Resource: !GetAtt EventCrudDDB.Arn
 Outputs:
-    HelloWorldApi:
-      Description: "API Gateway endpoint URL for Prod environment for Hello World Function"
-      Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/hello"
+  SGEventHubCRUDApi:
+    Description: "API Gateway endpoint URL for SGEventHub API"
+    Value: !Sub  "https://${EventCrudApi}.execute-api.${AWS::Region}.amazonaws.com/dev/"
 
-    HelloWorldFunction:
-      Description: "Hello World Lambda Function ARN"
-      Value: !GetAtt HelloWorldFunction.Arn
+  HelloWorldApi:
+    Description: "API Gateway endpoint URL for Prod environment for Hello World Function"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/hello"
+
+  HelloWorldFunction:
+    Description: "Hello World Lambda Function ARN"
+    Value: !GetAtt HelloWorldFunction.Arn
 
