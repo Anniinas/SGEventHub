@@ -57,7 +57,7 @@ Resources:
                   DomainName: !Sub '${Frontend}.s3.${AWS::Region}.amazonaws.com' 
                   Id: thisS3Origin
                   S3OriginConfig:
-                    OriginAccessIdentity: !Join ['', ['origin-access-identity/cloudfront/', !Ref CloudFrontOAI]]
+                    OriginAccessIdentity: !Sub 'origin-access-identity/cloudfront/${CloudFrontOAI}'
 
   Frontend:
       Type: AWS::S3::Bucket
@@ -209,6 +209,8 @@ Resources:
                       }
 
                 passthroughBehavior: "when_no_templates"
+              security:
+                - EventUserPool: []  
             delete:
               parameters:
               - name: "id"
@@ -327,9 +329,30 @@ Resources:
 
                 passthroughBehavior: "when_no_templates"
         components: {}
+      Auth:
+        DefaultAuthorizer: EventCognitoAuth
+        Authorizers:
+          EventCognitoAuth:
+            UserPoolArn: !GetAtt EventUserPool.Arn
+
+  EventApiGatewayAuthorizer:
+    Type: AWS::ApiGateway::Authorizer
+    Properties:
+      Name: CognitoUserPoolAuthorizer
+      Type: COGNITO_USER_POOLS
+      IdentitySource: method.request.header.Authorization
+      ProviderARNs:
+        - Fn::GetAtt: [EventUserPool, Arn]
+      RestApiId:
+        Ref: EventCrudApi    
 
   EventCrudDDB:
     Type: AWS::DynamoDB::Table
+    # TODO! These should maybe set to retain when in production?
+    # ------
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    # ------
     Properties:
       AttributeDefinitions:
         - AttributeName: id
@@ -364,6 +387,47 @@ Resources:
                 - dynamodb:Query
               Effect: Allow
               Resource: !GetAtt EventCrudDDB.Arn
+
+  EventUserPool:
+    Type: AWS::Cognito::UserPool
+    # TODO! These should maybe set to retain when in production?
+    # ------
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    # ------
+    Properties:
+      UserPoolName: EventHubAppUserPool
+      Schema:
+        - Name: email
+          Required: true
+          Mutable: false
+      AutoVerifiedAttributes:
+        - email
+
+  EventUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId:
+        Ref: EventUserPool
+      ClientName: EventHubAppUserPoolClient
+      GenerateSecret: false  # Not recommended for clients that are directly accessed from client-side apps
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      SupportedIdentityProviders:
+        - COGNITO
+      CallbackURLs:
+        - "https://yourapp.com/callback"
+      LogoutURLs:
+        - "https://yourapp.com/logout"
+
+  EventUserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: "sg-event-hub-users"  # This needs to be unique across Cognito
+      UserPoolId:
+        Ref: EventUserPool     
+                  
 Outputs:
   SGEventHubCRUDApi:
     Description: "API Gateway endpoint URL for SGEventHub API"
