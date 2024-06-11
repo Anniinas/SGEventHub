@@ -116,6 +116,18 @@ Resources:
         info:
           title: "DynamoDB Crud API with Canary releases"
           version: "1.0.0"
+        x-amazon-apigateway-cors:
+          allowOrigins:
+            - "*"
+          allowHeaders:
+            - "Content-Type"
+            - "X-Amz-Date"
+            - "Authorization"
+            - "X-Api-Key"
+            - "X-Amz-Security-Token"
+          allowMethods:
+            - "GET"
+            - "OPTIONS"  
         paths:
           /{id}:
             get:
@@ -142,10 +154,34 @@ Resources:
                       application/json: |
                         #set($inputRoot = $input.path('$')) 
                         {
-                          "id": "$inputRoot.Item.id.S",
-                          "name": "$inputRoot.Item.name.S",
-                          "date": "$inputRoot.Item.date.S",
-                          "location": "$inputRoot.Item.location.S",
+                          "item": [
+                            {
+                              "id": "$inputRoot.Item.id.S",
+                              "eventDetails": {
+                                "organizer": "$inputRoot.Item.eventDetails.M.organizer.S",
+                                "organizerUrl": "$inputRoot.Item.eventDetails.M.organizerUrl.S",
+                                "promoter": "$inputRoot.Item.eventDetails.M.promoter.S",
+                                "promoterEmail": "$inputRoot.Item.eventDetails.M.promoterEmail.S",
+                                "restrictions": "$inputRoot.Item.eventDetails.M.restrictions.S",
+                                "resultType": "$inputRoot.Item.eventDetails.M.resultType.S",
+                                "showDate": "$inputRoot.Item.eventDetails.M.showDate.N",
+                                "showLastDate": "$inputRoot.Item.eventDetails.M.showLastDate.N"
+                              },
+                              "eventRules": {
+                                "maxClassesInEvent": "$inputRoot.Item.eventRules.M.maxClassesInEvent.N",
+                                "maxInClass": "$inputRoot.Item.eventRules.M.maxInClass.N",
+                                "maxParticipantInClass": "$inputRoot.Item.eventRules.M.maxParticipantInClass.N",
+                                "requireVRLAccount": "$inputRoot.Item.eventRules.M.requireVRLAccount.BOOL"
+                              },
+                              "eventClasses": {
+                                #foreach($classKey in $inputRoot.Item.eventClasses.M.keySet())
+                                "$classKey": {
+                                  "participants": "$inputRoot.Item.eventClasses.M[$classKey].M.participants.S"
+                                }#if($foreach.hasNext),#end
+                                #end
+                              }
+                            }  
+                          ]
                         }
                 requestTemplates:
                   application/json:
@@ -160,12 +196,10 @@ Resources:
                       }
                 passthroughBehavior: "when_no_templates"
             put:
-              parameters:
-              - name: "id"
-                in: "path"
-                required: true
-                schema:
-                  type: "string"
+              x-amazon-apigateway-authorizer:
+                type: "cognito_user_pools"
+                providerARNs:
+                  - !GetAtt EventUserPool.Arn
               responses:
                 "200":
                   description: "200 response"
@@ -184,6 +218,9 @@ Resources:
                         #set($inputRoot = $input.path('$'))
                         {
                           "id": "$inputRoot.Attributes.id.S",
+                          "name": "$inputRoot.Attributes.name.S"
+                          "date": "$inputRoot.Attributes.date.S"
+                          "location": "$inputRoot.Attributes.location.S"
                           "message": "$inputRoot.Attributes.message.S"
                         }
                 requestTemplates:
@@ -197,21 +234,35 @@ Resources:
                           }
                         },
                         "ExpressionAttributeNames": {
-                          "#m": "message"
+                          "#m": "message",
+                          "#n": "name",
+                          "#d": "date",
+                          "#l": "location"
                         },
                         "ExpressionAttributeValues": {
                           ":m": {
                             "S": $input.json('$.message')
+                          },
+                          ":n": {
+                            "S": $input.json('$.name')
+                          },
+                          ":d": {
+                            "S": $input.json('$.date')
+                          },
+                          ":l": {
+                            "S": $input.json('$.location')
                           }
                         },
-                        "UpdateExpression": "SET #m = :m",
+                        "UpdateExpression": "SET #m = :m, #n = :n, #d = :d, #l = :l",
                         "ReturnValues": "ALL_NEW"
                       }
-
                 passthroughBehavior: "when_no_templates"
-              security:
-                - EventUserPool: []  
+      
             delete:
+              x-amazon-apigateway-authorizer:
+                type: "cognito_user_pools"
+                providerARNs:
+                  - !GetAtt EventUserPool.Arn
               parameters:
               - name: "id"
                 in: "path"
@@ -285,6 +336,10 @@ Resources:
                       }
                 passthroughBehavior: "when_no_templates"
             post:
+              x-amazon-apigateway-authorizer:
+                type: "cognito_user_pools"
+                providerARNs:
+                  - !GetAtt EventUserPool.Arn
               responses:
                 "200":
                   description: "200 response"
@@ -303,6 +358,9 @@ Resources:
                         #set($inputRoot = $input.path('$'))
                         {
                           "id": "$inputRoot.Attributes.id.S",
+                          "name": "$inputRoot.Attributes.name.S"
+                          "date": "$inputRoot.Attributes.date.S"
+                          "location": "$inputRoot.Attributes.location.S"
                           "message": "$inputRoot.Attributes.message.S"
                         }
                 requestTemplates:
@@ -316,24 +374,31 @@ Resources:
                           }
                         },
                         "ExpressionAttributeNames": {
-                          "#m": "message"
+                          "#m": "message",
+                          "#n": "name",
+                          "#d": "date",
+                          "#l": "location"
                         },
                         "ExpressionAttributeValues": {
                           ":m": {
                             "S": $input.json('$.message')
+                          },
+                          ":n": {
+                            "S": $input.json('$.name')
+                          },
+                          ":d": {
+                            "S": $input.json('$.date')
+                          },
+                          ":l": {
+                            "S": $input.json('$.location')
                           }
                         },
-                        "UpdateExpression": "SET #m = :m",
+                        "UpdateExpression": "SET #m = :m, #n = :n, #d = :d, #l = :l",
                         "ReturnValues": "ALL_NEW"
                       }
 
                 passthroughBehavior: "when_no_templates"
         components: {}
-      Auth:
-        DefaultAuthorizer: EventCognitoAuth
-        Authorizers:
-          EventCognitoAuth:
-            UserPoolArn: !GetAtt EventUserPool.Arn
 
   EventApiGatewayAuthorizer:
     Type: AWS::ApiGateway::Authorizer
@@ -401,8 +466,8 @@ Resources:
         - Name: email
           Required: true
           Mutable: false
-      AutoVerifiedAttributes:
-        - email
+      #AutoVerifiedAttributes:
+      #  - email
 
   EventUserPoolClient:
     Type: AWS::Cognito::UserPoolClient
